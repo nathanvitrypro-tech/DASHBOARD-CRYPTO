@@ -25,53 +25,57 @@ st.markdown("""
         background-attachment: fixed;
     }
     
-    .block-container { padding-top: 1rem; padding-bottom: 2rem; }
+    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
     
-    /* --- STYLE DES KPI DU HAUT (HTML CUSTOM) --- */
+    /* --- CSS COMPACT POUR ÉVITER LES COUPURES --- */
     .kpi-card {
         background-color: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-        padding: 15px;
+        border-radius: 8px;
+        padding: 10px; /* Réduit de 15px à 10px */
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.05);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        height: 100%; /* Force la même hauteur */
     }
     
     .kpi-title {
-        color: #BBBBBB !important; /* Gris clair très visible */
-        font-size: 0.85rem;
+        color: #BBBBBB !important;
+        font-size: 0.75rem; /* Réduit */
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1px;
-        margin-bottom: 5px;
+        margin-bottom: 2px;
         display: block;
     }
     
     .kpi-value {
-        font-size: 1.8rem;
+        font-size: 1.5rem; /* Réduit de 1.8rem à 1.5rem pour éviter que ça coupe */
         font-weight: 800;
         color: #FFFFFF;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        line-height: 1.2;
     }
     
-    .kpi-delta-pos { color: #00f2c3; font-weight: bold; font-size: 0.9rem; }
-    .kpi-delta-neg { color: #ff0055; font-weight: bold; font-size: 0.9rem; }
-    .kpi-delta-neutral { color: #888; font-size: 0.9rem; }
+    .kpi-detail { font-size: 0.8rem; margin-top: 2px; }
     
-    /* Carte de données "Scorecard" (Gauche) */
+    .kpi-delta-pos { color: #00f2c3; font-weight: bold; }
+    .kpi-delta-neg { color: #ff0055; font-weight: bold; }
+    .kpi-delta-neutral { color: #888; }
+    
+    /* Scorecard (Gauche) */
     .scorecard {
         background-color: rgba(255,255,255,0.05);
-        padding: 15px;
-        border-radius: 10px;
+        padding: 12px;
+        border-radius: 8px;
         border: 1px solid rgba(255,255,255,0.1);
-        margin-bottom: 10px;
+        margin-bottom: 8px;
     }
     
     .score-title {
         color: #FFFFFF !important; 
-        font-size: 0.8em; 
+        font-size: 0.75em; 
         font-weight: 800; 
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -173,7 +177,6 @@ if page == "Vue Globale 🌍":
         df = get_global_market()
     
     if not df.empty:
-        # Ici on garde st.metric car ça marche bien sur la page globale d'après tes tests
         c1, c2, c3 = st.columns(3)
         best = df.loc[df['Variation'].idxmax()]
         worst = df.loc[df['Variation'].idxmin()]
@@ -212,13 +215,12 @@ elif page == "Deep Dive 🔍":
     
     k1, k2, k3, k4 = st.columns(4)
     
-    # Fonction helper pour créer les cartes HTML
     def kpi_card(title, value, detail, detail_color_class):
         return f"""
         <div class="kpi-card">
             <span class="kpi-title">{title}</span>
             <div class="kpi-value">{value}</div>
-            <div class="{detail_color_class}">{detail}</div>
+            <div class="kpi-detail {detail_color_class}">{detail}</div>
         </div>
         """
     
@@ -262,8 +264,9 @@ elif page == "Deep Dive 🔍":
         wr_color = c_up if stats['win_rate'] > 50 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span class="score-title">WIN RATE (JOURS VERTS)</span><br>
+            <span class="score-title">WIN RATE</span><br>
             <span style="font-size:1.3em; font-weight:bold; color:{wr_color}">{stats['win_rate']:.1f}%</span>
+            <div style="font-size:0.7rem; color:#888;">Jours Verts</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -273,15 +276,15 @@ elif page == "Deep Dive 🔍":
         <div class="scorecard">
             <span class="score-title">TENDANCE VOLUME</span><br>
             <span style="font-size:1.3em; font-weight:bold; color:{vol_col}">{stats['vol_trend']:+.1f}%</span><br>
-            <span style="font-size:0.8em; color:#ccc;">{vol_txt}</span>
+            <span style="font-size:0.7em; color:#ccc;">{vol_txt}</span>
         </div>
         """, unsafe_allow_html=True)
         
         st.markdown(f"""
         <div class="scorecard">
             <span class="score-title">RANGE PÉRIODE</span><br>
-            High: <span style="color:{c_up}">{hist['High'].max():.2f}€</span><br>
-            Low: <span style="color:{c_down}">{hist['Low'].min():.2f}€</span>
+            <span style="font-size:0.8em; color:#888;">High:</span> <span style="color:{c_up}">{hist['High'].max():.2f}€</span><br>
+            <span style="font-size:0.8em; color:#888;">Low:</span> <span style="color:{c_down}">{hist['Low'].min():.2f}€</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -294,7 +297,7 @@ elif page == "Deep Dive 🔍":
         if len(hist) > 200:
             fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA200'], line=dict(color="#00f2c3", width=2), name="SMA 200"))
 
-        fig.update_layout(height=420, margin=dict(t=10, b=10, l=0, r=0), 
+        fig.update_layout(height=450, margin=dict(t=10, b=10, l=0, r=0), 
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                           xaxis_rangeslider_visible=False, yaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
                           legend=dict(orientation="h", y=1.02))
