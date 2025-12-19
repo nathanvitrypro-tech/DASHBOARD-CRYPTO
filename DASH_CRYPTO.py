@@ -85,15 +85,13 @@ def get_global_data():
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
-            hist = t.history(period="1mo") # On prend 1 mois pour calculer la volatilité
+            hist = t.history(period="1mo") 
             fi = t.fast_info
             
             if len(hist) > 0:
                 last = fi.last_price
                 prev = fi.previous_close
                 var = ((last - prev) / prev) * 100 if prev else 0
-                
-                # Calcul Volatilité (Ecart-type des variations)
                 volatility = hist['Close'].pct_change().std() * 100
                 
                 global_data.append({
@@ -110,18 +108,14 @@ def get_detail_data(symbol, period="1y"):
         stock = yf.Ticker(symbol)
         hist = stock.history(period=period)
         
-        # Calcul RSI
         hist['RSI'] = calculate_rsi(hist['Close'])
-        # Calcul Moyenne Mobile 50 jours
         hist['SMA50'] = hist['Close'].rolling(window=50).mean()
         
         inf = stock.info
         fi = stock.fast_info
         
-        # Calcul Drawdown (Distance du plus haut annuel)
         year_high = inf.get('fiftyTwoWeekHigh', fi.last_price)
         current = fi.last_price
-        # Sécurité pour éviter division par zéro
         drawdown = ((current - year_high) / year_high) * 100 if year_high and year_high > 0 else 0
 
         info_dict = {
@@ -179,7 +173,6 @@ if page == "Vue Marché 🌍":
     
     with c_left:
         st.subheader("📊 Top Liquidité (Volume 24h)")
-        # Graphique des volumes classés
         df_vol = df_global.sort_values(by="Volume", ascending=False).head(10)
         fig_vol = px.bar(df_vol, x='Volume', y='Crypto', orientation='h', 
                          color='Volume', color_continuous_scale=['#2c3e50', c_neon])
@@ -188,7 +181,6 @@ if page == "Vue Marché 🌍":
         st.plotly_chart(fig_vol, use_container_width=True)
 
     with c_right:
-        # VERSION COMPATIBLE : Pas de 'help', on utilise st.caption
         st.subheader("🎯 Matrice Risque/Gain")
         st.caption("ℹ️ HAUT = Ça monte | DROITE = Risqué (Volatile)")
         
@@ -197,7 +189,7 @@ if page == "Vue Marché 🌍":
             x="Volatilité", 
             y="Variation %", 
             color="Variation %",
-            size="Volume", # La taille des bulles dépend du volume
+            size="Volume", 
             text="Symbole", 
             color_continuous_scale="RdYlGn",
             hover_name="Crypto",
@@ -225,13 +217,11 @@ if page == "Vue Marché 🌍":
     st.divider()
     
     st.subheader("📋 Tableau de Bord (Prix & Volume)")
-    # Note : Si background_gradient échoue, il faut installer matplotlib (pip install matplotlib)
     try:
         st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']].style.format(
             {"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Volume": "{:,.0f}", "Volatilité": "{:.1f}"}
         ).background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5), use_container_width=True)
     except:
-        st.warning("⚠️ Installez matplotlib pour voir les couleurs (pip install matplotlib)")
         st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']], use_container_width=True)
 
 
@@ -252,9 +242,12 @@ elif page == "Analyse Technique 🔍":
         hist, info = get_detail_data(symbol, period=p_map[period])
         btc_hist = get_historical_data("BTC-EUR", period=p_map[period])
 
-    if hist is None: st.error("Erreur data").stop()
+    # --- CORRECTION ICI (BUG FIX) ---
+    if hist is None:
+        st.error("Erreur de récupération des données.")
+        st.stop() # On utilise st.stop() sur une nouvelle ligne
+    # --------------------------------
 
-    # --- JAUGE RSI (Indicateur clé en crypto) ---
     def plot_rsi_gauge(rsi_val):
         color = c_danger if rsi_val > 70 else (c_neon if rsi_val < 30 else "#ffffff")
         status = "SURACHAT" if rsi_val > 70 else ("SURVENTE" if rsi_val < 30 else "Neutre")
@@ -270,12 +263,9 @@ elif page == "Analyse Technique 🔍":
         fig.update_layout(height=200, margin=dict(t=40, b=10, l=30, r=30), paper_bgcolor='rgba(0,0,0,0)')
         return fig
 
-    # --- GRAPHIQUE PRIX + MOYENNE MOBILE ---
     def plot_pro_chart(df):
         fig = go.Figure()
-        # Bougies
         fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Prix'))
-        # Moyenne Mobile 50 (Tendance)
         fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color=c_warn, width=2), name='Moyenne 50j'))
         
         fig.update_layout(height=350, margin=dict(t=10, b=10, l=0, r=0), 
@@ -285,7 +275,6 @@ elif page == "Analyse Technique 🔍":
                           legend=dict(orientation="h", y=1, x=0))
         return fig
     
-    # --- DRAWDOWN (Distance du sommet) ---
     def plot_drawdown(current, high, low):
         dd = ((current - high) / high) * 100
         fig = go.Figure(go.Indicator(
@@ -295,13 +284,11 @@ elif page == "Analyse Technique 🔍":
         fig.update_layout(height=150, margin=dict(t=30, b=0), paper_bgcolor='rgba(0,0,0,0)')
         return fig
 
-    # --- MISE EN PAGE ---
     st.title(f"🔍 Analyse : {selected_name}")
 
     col_L, col_M, col_R = st.columns([1, 1.5, 1.5], gap="medium")
 
     with col_L:
-        # VERSION COMPATIBLE : Pas de 'help', on utilise st.caption
         st.write("##### ⚡ Momentum (RSI)")
         st.caption("ℹ️ >70: Surchauffe (Attention) | <30: Opportunité")
         st.plotly_chart(plot_rsi_gauge(info['rsi']), use_container_width=True)
@@ -328,7 +315,6 @@ elif page == "Analyse Technique 🔍":
         k2.metric("24h", f"{var:+.2f}%", delta=f"{var:+.2f}%")
         
         st.write("##### 📈 Comparaison vs Bitcoin")
-        # Comparatif BTC
         if btc_hist is not None:
             norm_crypto = (hist['Close'] / hist['Close'].iloc[0]) * 100
             norm_btc = (btc_hist / btc_hist.iloc[0]) * 100
