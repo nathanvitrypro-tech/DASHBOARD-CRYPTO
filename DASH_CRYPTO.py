@@ -25,17 +25,23 @@ st.markdown("""
         background-attachment: fixed;
     }
     
-    /* Réduction des marges */
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
     
-    /* Style des Metrics */
+    /* --- CORRECTION ICI : TITRES DES METRICS BIEN BLANCS --- */
+    div[data-testid="stMetricLabel"] {
+        font-size: 1rem !important;
+        color: #ffffff !important; /* Force le blanc */
+        font-weight: 700 !important; /* Force le gras */
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
     div[data-testid="stMetricValue"] {
-        font-size: 24px;
+        font-size: 26px;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
-    div[data-testid="stMetricLabel"] { font-size: 0.8rem; color: #888; }
     
     /* Carte de données "Scorecard" */
     .scorecard {
@@ -70,18 +76,16 @@ def calculate_advanced_stats(data, btc_data):
     data['SMA50'] = data['Close'].rolling(50).mean()
     data['SMA200'] = data['Close'].rolling(200).mean()
     
-    # --- NOUVEAUX INDICATEURS ---
-    # 1. Corrélation BTC (Beta sur la période affichée)
-    # On aligne les dates
+    # 1. Corrélation BTC
     common_idx = data.index.intersection(btc_data.index)
     corr = data.loc[common_idx]['Close'].pct_change().corr(btc_data.loc[common_idx]['Close'].pct_change())
     
-    # 2. Win Rate (% de jours verts)
+    # 2. Win Rate
     green_days = len(data[data['Close'] > data['Open']])
     total_days = len(data)
     win_rate = (green_days / total_days) * 100 if total_days > 0 else 0
     
-    # 3. Volume Trend (Vol moyen 5j vs Vol moyen 20j)
+    # 3. Volume Trend
     vol_short = data['Volume'].tail(5).mean()
     vol_long = data['Volume'].tail(20).mean()
     vol_trend = ((vol_short - vol_long) / vol_long) * 100 if vol_long > 0 else 0
@@ -117,7 +121,6 @@ def get_data(symbol, period="1y"):
 
 @st.cache_data(ttl=3600)
 def get_global_market():
-    # Version simplifiée pour la vue globale
     global_data = []
     for n, s in tickers.items():
         try:
@@ -148,9 +151,9 @@ if page == "Vue Globale 🌍":
         c1, c2, c3 = st.columns(3)
         best = df.loc[df['Variation'].idxmax()]
         worst = df.loc[df['Variation'].idxmin()]
-        c1.metric("Top Gainer", best['Crypto'], f"{best['Variation']:.2f}%")
-        c2.metric("Top Loser", worst['Crypto'], f"{worst['Variation']:.2f}%")
-        c3.metric("Leader Volume", df.sort_values('Volume', ascending=False).iloc[0]['Crypto'])
+        c1.metric("TOP GAINER", best['Crypto'], f"{best['Variation']:.2f}%")
+        c2.metric("TOP LOSER", worst['Crypto'], f"{worst['Variation']:.2f}%")
+        c3.metric("LEADER VOLUME", df.sort_values('Volume', ascending=False).iloc[0]['Crypto'])
         st.divider()
         
         c_chart, c_list = st.columns([2, 1])
@@ -178,69 +181,69 @@ elif page == "Deep Dive 🔍":
         
     if hist is None: st.error("Erreur de données").stop()
 
-    # --- TOP KPI ---
+    # --- TOP KPI (TITRES RÉTABLIS) ---
     var = ((stats['last'] - stats['prev'])/stats['prev'])*100
+    
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Prix", f"{stats['last']:.4f} €", f"{var:.2f}%")
     
+    # 1. PRIX
+    k1.metric("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:.2f}%")
+    
+    # 2. SHARPE
     sharpe_col = "normal" if stats['sharpe'] > 1 else "inverse"
-    k2.metric("Ratio Sharpe", f"{stats['sharpe']:.2f}", delta_color=sharpe_col, help="Rentabilité ajustée au risque (>1 est bon)")
+    k2.metric("RATIO SHARPE", f"{stats['sharpe']:.2f}", delta_color=sharpe_col, help="Rentabilité ajustée au risque (>1 est bon)")
     
+    # 3. CORRELATION
     corr_val = stats['corr_btc']
     corr_txt = "Suit le BTC" if corr_val > 0.7 else ("Indépendant" if corr_val < 0.4 else "Modéré")
-    k3.metric("Corrélation BTC", f"{corr_val:.2f}", corr_txt, delta_color="off")
+    k3.metric("CORRÉLATION BTC", f"{corr_val:.2f}", corr_txt, delta_color="off")
     
+    # 4. RSI
     rsi = hist['RSI'].iloc[-1]
-    k4.metric("RSI (Force)", f"{rsi:.1f}")
+    k4.metric("RSI (FORCE)", f"{rsi:.1f}")
     
     st.divider()
 
     # --- MAIN SECTION : SCORECARD + GRAPH ---
-    # Répartition 25% (Scorecard) / 75% (Graph)
     col_score, col_chart = st.columns([1, 3])
     
     with col_score:
         st.subheader("📊 Scorecard")
         
-        # Données Volatilité
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#888; font-size:0.8em;">VOLATILITÉ QUOTIDIENNE</span><br>
-            <span style="font-size:1.2em; font-weight:bold;">{stats['volatility_day']:.2f}%</span>
+            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">VOLATILITÉ JOUR</span><br>
+            <span style="font-size:1.3em; font-weight:bold;">{stats['volatility_day']:.2f}%</span>
         </div>
         """, unsafe_allow_html=True)
         
-        # Win Rate
         wr_color = c_up if stats['win_rate'] > 50 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#888; font-size:0.8em;">JOURS VERTS (WIN RATE)</span><br>
-            <span style="font-size:1.2em; font-weight:bold; color:{wr_color}">{stats['win_rate']:.1f}%</span>
+            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">WIN RATE (JOURS VERTS)</span><br>
+            <span style="font-size:1.3em; font-weight:bold; color:{wr_color}">{stats['win_rate']:.1f}%</span>
         </div>
         """, unsafe_allow_html=True)
         
-        # Volume Trend
-        vol_txt = "Volume en hausse" if stats['vol_trend'] > 0 else "Volume en baisse"
+        vol_txt = "Hausse" if stats['vol_trend'] > 0 else "Baisse"
         vol_col = c_up if stats['vol_trend'] > 0 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#888; font-size:0.8em;">TENDANCE VOLUME (vs 20j)</span><br>
-            <span style="font-size:1.2em; font-weight:bold; color:{vol_col}">{stats['vol_trend']:+.1f}%</span><br>
-            <span style="font-size:0.7em;">{vol_txt}</span>
+            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">TENDANCE VOLUME</span><br>
+            <span style="font-size:1.3em; font-weight:bold; color:{vol_col}">{stats['vol_trend']:+.1f}%</span><br>
+            <span style="font-size:0.8em; color:#ccc;">{vol_txt}</span>
         </div>
         """, unsafe_allow_html=True)
         
-        # Support / Résistance (Approximation Min/Max)
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#888; font-size:0.8em;">RANGE PÉRIODE</span><br>
+            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">RANGE PÉRIODE</span><br>
             High: <span style="color:{c_up}">{hist['High'].max():.2f}€</span><br>
             Low: <span style="color:{c_down}">{hist['Low'].min():.2f}€</span>
         </div>
         """, unsafe_allow_html=True)
 
     with col_chart:
-        # Chart Hauteur réduite (400px)
         st.subheader(f"Graphique Technique ({time_frame})")
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name="Prix"))
