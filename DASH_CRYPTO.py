@@ -25,40 +25,44 @@ st.markdown("""
         background-attachment: fixed;
     }
     
-    .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
+    /* --- CORRECTION CRITIQUE : MARGE HAUTE FORCÉE --- */
+    .block-container { 
+        padding-top: 5rem !important; /* 5rem = BEAUCOUP d'espace en haut */
+        padding-bottom: 2rem; 
+    }
     
-    /* --- CSS COMPACT POUR ÉVITER LES COUPURES --- */
+    /* KPI Cards Compactes */
     .kpi-card {
         background-color: rgba(255, 255, 255, 0.05);
         border-radius: 8px;
-        padding: 10px; /* Réduit de 15px à 10px */
+        padding: 8px; /* Padding réduit */
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.05);
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        height: 100%; /* Force la même hauteur */
+        height: 100%;
     }
     
     .kpi-title {
         color: #BBBBBB !important;
-        font-size: 0.75rem; /* Réduit */
+        font-size: 0.7rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1px;
-        margin-bottom: 2px;
+        margin-bottom: 0px;
         display: block;
     }
     
     .kpi-value {
-        font-size: 1.5rem; /* Réduit de 1.8rem à 1.5rem pour éviter que ça coupe */
+        font-size: 1.4rem; /* Taille adaptée */
         font-weight: 800;
         color: #FFFFFF;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        line-height: 1.2;
+        margin: 2px 0;
     }
     
-    .kpi-detail { font-size: 0.8rem; margin-top: 2px; }
+    .kpi-detail { font-size: 0.75rem; }
     
     .kpi-delta-pos { color: #00f2c3; font-weight: bold; }
     .kpi-delta-neg { color: #ff0055; font-weight: bold; }
@@ -67,7 +71,7 @@ st.markdown("""
     /* Scorecard (Gauche) */
     .scorecard {
         background-color: rgba(255,255,255,0.05);
-        padding: 12px;
+        padding: 10px;
         border-radius: 8px;
         border: 1px solid rgba(255,255,255,0.1);
         margin-bottom: 8px;
@@ -75,7 +79,7 @@ st.markdown("""
     
     .score-title {
         color: #FFFFFF !important; 
-        font-size: 0.75em; 
+        font-size: 0.7em; 
         font-weight: 800; 
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -95,31 +99,25 @@ tickers = {
 # 2. CALCULS AVANCÉS
 # =========================================================
 def calculate_advanced_stats(data, btc_data):
-    # RSI
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     data['RSI'] = 100 - (100 / (1 + gain/loss))
     
-    # Moyennes Mobiles
     data['SMA50'] = data['Close'].rolling(50).mean()
     data['SMA200'] = data['Close'].rolling(200).mean()
     
-    # 1. Corrélation BTC
     common_idx = data.index.intersection(btc_data.index)
     corr = data.loc[common_idx]['Close'].pct_change().corr(btc_data.loc[common_idx]['Close'].pct_change())
     
-    # 2. Win Rate
     green_days = len(data[data['Close'] > data['Open']])
     total_days = len(data)
     win_rate = (green_days / total_days) * 100 if total_days > 0 else 0
     
-    # 3. Volume Trend
     vol_short = data['Volume'].tail(5).mean()
     vol_long = data['Volume'].tail(20).mean()
     vol_trend = ((vol_short - vol_long) / vol_long) * 100 if vol_long > 0 else 0
     
-    # 4. Ratio Sharpe
     returns = data['Close'].pct_change().dropna()
     sharpe = (returns.mean() / returns.std()) * np.sqrt(365) if returns.std() != 0 else 0
     
@@ -136,15 +134,11 @@ def get_data(symbol, period="1y"):
     try:
         data = yf.Ticker(symbol).history(period=period)
         if data.empty: return None, None
-        
         btc = yf.Ticker("BTC-EUR").history(period=period)
-        
         data, stats = calculate_advanced_stats(data, btc)
-        
         info = yf.Ticker(symbol).fast_info
         stats['last'] = info.last_price
         stats['prev'] = info.previous_close
-        
         return data, stats
     except: return None, None
 
@@ -167,7 +161,6 @@ st.sidebar.title("🏦 Hedge Fund Dash")
 page = st.sidebar.radio("Navigation", ["Vue Globale 🌍", "Deep Dive 🔍"])
 if st.sidebar.button("🔄 Refresh"): st.cache_data.clear(); st.rerun()
 
-# Couleurs
 c_up = "#00f2c3"
 c_down = "#ff0055"
 
@@ -210,9 +203,8 @@ elif page == "Deep Dive 🔍":
         
     if hist is None: st.error("Erreur de données").stop()
 
-    # --- TOP KPI (REFAIT EN HTML POUR VISIBILITÉ GARANTIE) ---
+    # --- TOP KPI CUSTOM ---
     var = ((stats['last'] - stats['prev'])/stats['prev'])*100
-    
     k1, k2, k3, k4 = st.columns(4)
     
     def kpi_card(title, value, detail, detail_color_class):
@@ -224,23 +216,19 @@ elif page == "Deep Dive 🔍":
         </div>
         """
     
-    # 1. PRIX
     var_class = "kpi-delta-pos" if var > 0 else "kpi-delta-neg"
     k1.markdown(kpi_card("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:+.2f}%", var_class), unsafe_allow_html=True)
     
-    # 2. SHARPE
     sharpe = stats['sharpe']
     s_cls = "kpi-delta-pos" if sharpe > 1 else ("kpi-delta-neutral" if sharpe > 0 else "kpi-delta-neg")
     s_txt = "Excellent" if sharpe > 2 else ("Bon" if sharpe > 1 else "Risqué")
     k2.markdown(kpi_card("RATIO SHARPE", f"{sharpe:.2f}", s_txt, s_cls), unsafe_allow_html=True)
     
-    # 3. CORRELATION
     corr = stats['corr_btc']
     c_cls = "kpi-delta-pos" if corr > 0.7 else "kpi-delta-neutral"
     c_txt = "Suit le BTC" if corr > 0.7 else "Indépendant"
     k3.markdown(kpi_card("CORRÉLATION BTC", f"{corr:.2f}", c_txt, c_cls), unsafe_allow_html=True)
     
-    # 4. RSI
     rsi = hist['RSI'].iloc[-1]
     r_cls = "kpi-delta-neg" if rsi > 70 else ("kpi-delta-pos" if rsi < 30 else "kpi-delta-neutral")
     r_txt = "Surchauffe" if rsi > 70 else ("Opportunité" if rsi < 30 else "Neutre")
@@ -248,12 +236,10 @@ elif page == "Deep Dive 🔍":
     
     st.divider()
 
-    # --- MAIN SECTION ---
     col_score, col_chart = st.columns([1, 3])
     
     with col_score:
         st.subheader("📊 Scorecard")
-        
         st.markdown(f"""
         <div class="scorecard">
             <span class="score-title">VOLATILITÉ JOUR</span><br>
