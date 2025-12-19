@@ -27,20 +27,31 @@ st.markdown("""
     
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
     
-    /* --- CORRECTION ICI : TITRES DES METRICS BIEN BLANCS --- */
-    div[data-testid="stMetricLabel"] {
-        font-size: 1rem !important;
-        color: #ffffff !important; /* Force le blanc */
-        font-weight: 700 !important; /* Force le gras */
-        text-transform: uppercase;
-        letter-spacing: 1px;
+    /* --- CSS ULTRA AGRESSIF POUR LES TITRES --- */
+    /* On cible le container du label */
+    [data-testid="stMetricLabel"] {
+        color: #FFFFFF !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
     }
     
-    div[data-testid="stMetricValue"] {
+    /* On cible le texte à l'intérieur (souvent dans un <p> ou <div>) */
+    [data-testid="stMetricLabel"] p {
+        color: #FFFFFF !important;
+    }
+    
+    [data-testid="stMetricLabel"] div {
+        color: #FFFFFF !important;
+    }
+
+    /* Valeur du Metric (Chiffres) */
+    [data-testid="stMetricValue"] {
         font-size: 26px;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        /* Fallback si le gradient ne marche pas */
+        color: #00f2c3 !important;
     }
     
     /* Carte de données "Scorecard" */
@@ -50,6 +61,15 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid rgba(255,255,255,0.1);
         margin-bottom: 10px;
+    }
+    
+    /* Titres Scorecard */
+    .score-title {
+        color: #FFFFFF !important; 
+        font-size: 0.8em; 
+        font-weight: 800; 
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -181,7 +201,7 @@ elif page == "Deep Dive 🔍":
         
     if hist is None: st.error("Erreur de données").stop()
 
-    # --- TOP KPI (TITRES RÉTABLIS) ---
+    # --- TOP KPI ---
     var = ((stats['last'] - stats['prev'])/stats['prev'])*100
     
     k1, k2, k3, k4 = st.columns(4)
@@ -210,9 +230,10 @@ elif page == "Deep Dive 🔍":
     with col_score:
         st.subheader("📊 Scorecard")
         
+        # J'ai ajouté la classe 'score-title' pour forcer le blanc ici aussi
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">VOLATILITÉ JOUR</span><br>
+            <span class="score-title">VOLATILITÉ JOUR</span><br>
             <span style="font-size:1.3em; font-weight:bold;">{stats['volatility_day']:.2f}%</span>
         </div>
         """, unsafe_allow_html=True)
@@ -220,7 +241,7 @@ elif page == "Deep Dive 🔍":
         wr_color = c_up if stats['win_rate'] > 50 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">WIN RATE (JOURS VERTS)</span><br>
+            <span class="score-title">WIN RATE (JOURS VERTS)</span><br>
             <span style="font-size:1.3em; font-weight:bold; color:{wr_color}">{stats['win_rate']:.1f}%</span>
         </div>
         """, unsafe_allow_html=True)
@@ -229,7 +250,7 @@ elif page == "Deep Dive 🔍":
         vol_col = c_up if stats['vol_trend'] > 0 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">TENDANCE VOLUME</span><br>
+            <span class="score-title">TENDANCE VOLUME</span><br>
             <span style="font-size:1.3em; font-weight:bold; color:{vol_col}">{stats['vol_trend']:+.1f}%</span><br>
             <span style="font-size:0.8em; color:#ccc;">{vol_txt}</span>
         </div>
@@ -237,7 +258,7 @@ elif page == "Deep Dive 🔍":
         
         st.markdown(f"""
         <div class="scorecard">
-            <span style="color:#ffffff; font-size:0.8em; font-weight:bold;">RANGE PÉRIODE</span><br>
+            <span class="score-title">RANGE PÉRIODE</span><br>
             High: <span style="color:{c_up}">{hist['High'].max():.2f}€</span><br>
             Low: <span style="color:{c_down}">{hist['Low'].min():.2f}€</span>
         </div>
