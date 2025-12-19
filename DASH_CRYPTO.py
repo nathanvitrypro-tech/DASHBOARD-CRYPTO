@@ -27,34 +27,40 @@ st.markdown("""
     
     .block-container { padding-top: 1rem; padding-bottom: 2rem; }
     
-    /* --- CSS ULTRA AGRESSIF POUR LES TITRES --- */
-    /* On cible le container du label */
-    [data-testid="stMetricLabel"] {
-        color: #FFFFFF !important;
-        font-size: 14px !important;
-        font-weight: 700 !important;
+    /* --- STYLE DES KPI DU HAUT (HTML CUSTOM) --- */
+    .kpi-card {
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    /* On cible le texte à l'intérieur (souvent dans un <p> ou <div>) */
-    [data-testid="stMetricLabel"] p {
-        color: #FFFFFF !important;
+    .kpi-title {
+        color: #BBBBBB !important; /* Gris clair très visible */
+        font-size: 0.85rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
+        display: block;
     }
     
-    [data-testid="stMetricLabel"] div {
-        color: #FFFFFF !important;
-    }
-
-    /* Valeur du Metric (Chiffres) */
-    [data-testid="stMetricValue"] {
-        font-size: 26px;
+    .kpi-value {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #FFFFFF;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        /* Fallback si le gradient ne marche pas */
-        color: #00f2c3 !important;
     }
     
-    /* Carte de données "Scorecard" */
+    .kpi-delta-pos { color: #00f2c3; font-weight: bold; font-size: 0.9rem; }
+    .kpi-delta-neg { color: #ff0055; font-weight: bold; font-size: 0.9rem; }
+    .kpi-delta-neutral { color: #888; font-size: 0.9rem; }
+    
+    /* Carte de données "Scorecard" (Gauche) */
     .scorecard {
         background-color: rgba(255,255,255,0.05);
         padding: 15px;
@@ -63,7 +69,6 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* Titres Scorecard */
     .score-title {
         color: #FFFFFF !important; 
         font-size: 0.8em; 
@@ -168,6 +173,7 @@ if page == "Vue Globale 🌍":
         df = get_global_market()
     
     if not df.empty:
+        # Ici on garde st.metric car ça marche bien sur la page globale d'après tes tests
         c1, c2, c3 = st.columns(3)
         best = df.loc[df['Variation'].idxmax()]
         worst = df.loc[df['Variation'].idxmin()]
@@ -201,36 +207,51 @@ elif page == "Deep Dive 🔍":
         
     if hist is None: st.error("Erreur de données").stop()
 
-    # --- TOP KPI ---
+    # --- TOP KPI (REFAIT EN HTML POUR VISIBILITÉ GARANTIE) ---
     var = ((stats['last'] - stats['prev'])/stats['prev'])*100
     
     k1, k2, k3, k4 = st.columns(4)
     
+    # Fonction helper pour créer les cartes HTML
+    def kpi_card(title, value, detail, detail_color_class):
+        return f"""
+        <div class="kpi-card">
+            <span class="kpi-title">{title}</span>
+            <div class="kpi-value">{value}</div>
+            <div class="{detail_color_class}">{detail}</div>
+        </div>
+        """
+    
     # 1. PRIX
-    k1.metric("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:.2f}%")
+    var_class = "kpi-delta-pos" if var > 0 else "kpi-delta-neg"
+    k1.markdown(kpi_card("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:+.2f}%", var_class), unsafe_allow_html=True)
     
     # 2. SHARPE
-    sharpe_col = "normal" if stats['sharpe'] > 1 else "inverse"
-    k2.metric("RATIO SHARPE", f"{stats['sharpe']:.2f}", delta_color=sharpe_col, help="Rentabilité ajustée au risque (>1 est bon)")
+    sharpe = stats['sharpe']
+    s_cls = "kpi-delta-pos" if sharpe > 1 else ("kpi-delta-neutral" if sharpe > 0 else "kpi-delta-neg")
+    s_txt = "Excellent" if sharpe > 2 else ("Bon" if sharpe > 1 else "Risqué")
+    k2.markdown(kpi_card("RATIO SHARPE", f"{sharpe:.2f}", s_txt, s_cls), unsafe_allow_html=True)
     
     # 3. CORRELATION
-    corr_val = stats['corr_btc']
-    corr_txt = "Suit le BTC" if corr_val > 0.7 else ("Indépendant" if corr_val < 0.4 else "Modéré")
-    k3.metric("CORRÉLATION BTC", f"{corr_val:.2f}", corr_txt, delta_color="off")
+    corr = stats['corr_btc']
+    c_cls = "kpi-delta-pos" if corr > 0.7 else "kpi-delta-neutral"
+    c_txt = "Suit le BTC" if corr > 0.7 else "Indépendant"
+    k3.markdown(kpi_card("CORRÉLATION BTC", f"{corr:.2f}", c_txt, c_cls), unsafe_allow_html=True)
     
     # 4. RSI
     rsi = hist['RSI'].iloc[-1]
-    k4.metric("RSI (FORCE)", f"{rsi:.1f}")
+    r_cls = "kpi-delta-neg" if rsi > 70 else ("kpi-delta-pos" if rsi < 30 else "kpi-delta-neutral")
+    r_txt = "Surchauffe" if rsi > 70 else ("Opportunité" if rsi < 30 else "Neutre")
+    k4.markdown(kpi_card("RSI (MOMENTUM)", f"{rsi:.1f}", r_txt, r_cls), unsafe_allow_html=True)
     
     st.divider()
 
-    # --- MAIN SECTION : SCORECARD + GRAPH ---
+    # --- MAIN SECTION ---
     col_score, col_chart = st.columns([1, 3])
     
     with col_score:
         st.subheader("📊 Scorecard")
         
-        # J'ai ajouté la classe 'score-title' pour forcer le blanc ici aussi
         st.markdown(f"""
         <div class="scorecard">
             <span class="score-title">VOLATILITÉ JOUR</span><br>
