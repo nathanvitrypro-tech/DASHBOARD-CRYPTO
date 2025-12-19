@@ -6,106 +6,103 @@ import yfinance as yf
 import numpy as np
 
 # =========================================================
-# 1. CONFIGURATION ET STYLE (MODE CRYPTO)
+# 1. CONFIGURATION ET STYLE (MODE TRADER)
 # =========================================================
-st.set_page_config(layout="wide", page_title="Crypto Dashboard", page_icon="🪙")
+st.set_page_config(layout="wide", page_title="Crypto Pro Dashboard", page_icon="⚡")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;800&display=swap');
-
+    
     html, body, [class*="css"]  {
         font-family: 'Montserrat', sans-serif;
         color: #e0e0e0;
     }
 
-    /* FOND DEGRADÉ SOMBRE (VIOLET/NOIR) */
+    /* FOND DEGRADÉ SOMBRE */
     .stApp {
-        background: rgb(5,5,20);
-        background: linear-gradient(160deg, rgba(5,5,20,1) 0%, rgba(20,0,40,1) 50%, rgba(0,0,0,1) 100%);
+        background: rgb(10,10,25);
+        background: linear-gradient(170deg, rgba(10,10,25,1) 0%, rgba(20,5,40,1) 60%, rgba(0,0,0,1) 100%);
         background-attachment: fixed;
     }
-
+    
     /* SIDEBAR */
     section[data-testid="stSidebar"] {
-        background-color: rgba(20, 0, 40, 0.8);
-        border-right: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: rgba(15, 15, 30, 0.9);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(10px);
     }
     section[data-testid="stSidebar"] * { color: #ffffff !important; }
-
+    
     /* CARTES */
     div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
-        background-color: rgba(255, 255, 255, 0.05);
-        padding: 25px;
-        border-radius: 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: rgba(255, 255, 255, 0.03);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(12px);
         margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     }
-
-    h1, h2, h3 { color: #ffffff; font-weight: 800; text-shadow: 0 0 10px rgba(150, 0, 255, 0.5); }
-    h5 { color: #d6b4fc; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; font-size: 0.85rem; }
-
-    /* CHIFFRES NEON (VIOLET/ORANGE) */
+    
+    h1, h2, h3 { color: #ffffff; font-weight: 800; text-shadow: 0 0 15px rgba(100, 50, 255, 0.4); }
+    h5 { color: #b8a4ff; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85rem; }
+    
+    /* METRICS */
     [data-testid="stMetricValue"] {
-        font-size: 32px;
+        font-size: 28px;
         font-weight: 800;
-        background: linear-gradient(45deg, #f39c12, #8e44ad);
+        background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
-    [data-testid="stMetricLabel"] { color: #b0b0b0; font-size: 1rem; }
+    [data-testid="stMetricLabel"] { color: #888; font-size: 0.9rem; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- LISTE DES CRYPTOS (EN EUR) ---
+# --- LISTE DES CRYPTOS ---
 tickers = {
-    "BITCOIN": "BTC-EUR",
-    "ETHEREUM": "ETH-EUR",
-    "SOLANA": "SOL-EUR",
-    "BNB": "BNB-EUR",
-    "XRP": "XRP-EUR",
-    "CARDANO": "ADA-EUR",
-    "DOGECOIN": "DOGE-EUR",
-    "AVALANCHE": "AVAX-EUR",
-    "TRON": "TRX-EUR",
-    "POLKADOT": "DOT-EUR",
-    "CHAINLINK": "LINK-EUR",
-    "POLYGON": "MATIC-EUR",
-    "SHIBA INU": "SHIB-EUR",
-    "LITECOIN": "LTC-EUR",
-    "UNISWAP": "UNI-EUR",
-    "STELLAR": "XLM-EUR",
-    "NEAR": "NEAR-EUR",
-    "PEPE": "PEPE-EUR"
+    "BITCOIN": "BTC-EUR", "ETHEREUM": "ETH-EUR", "SOLANA": "SOL-EUR", "BNB": "BNB-EUR",
+    "XRP": "XRP-EUR", "CARDANO": "ADA-EUR", "DOGECOIN": "DOGE-EUR", "AVALANCHE": "AVAX-EUR", 
+    "TRON": "TRX-EUR", "POLKADOT": "DOT-EUR", "LINK": "LINK-EUR", "POLYGON": "MATIC-EUR",
+    "SHIBA INU": "SHIB-EUR", "LITECOIN": "LTC-EUR", "NEAR": "NEAR-EUR", "PEPE": "PEPE-EUR",
+    "FANTOM": "FTM-EUR", "RENDER": "RNDR-EUR"
 }
 
+# =========================================================
+# 2. CALCULS TECHNIQUES (RSI, VOLATILITÉ)
+# =========================================================
+def calculate_rsi(data, window=14):
+    delta = data.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-# =========================================================
-# 2. FONCTIONS DE RÉCUPÉRATION
-# =========================================================
 @st.cache_data(ttl=3600)
 def get_global_data():
     global_data = []
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
+            hist = t.history(period="1mo") # On prend 1 mois pour calculer la volatilité
             fi = t.fast_info
-            last = fi.last_price
-            prev = fi.previous_close
-            var = ((last - prev) / prev) * 100 if prev else 0
-            # SECURITE : Si mcap est vide, on met 0
-            mcap = fi.market_cap if fi.market_cap is not None else 0
-
-            global_data.append({
-                "Crypto": name, "Symbole": sym, "Prix": last,
-                "Variation %": var, "Market Cap": mcap, "Volume": fi.last_volume
-            })
-        except:
-            continue
+            
+            if len(hist) > 0:
+                last = fi.last_price
+                prev = fi.previous_close
+                var = ((last - prev) / prev) * 100 if prev else 0
+                
+                # Calcul Volatilité (Ecart-type des variations)
+                volatility = hist['Close'].pct_change().std() * 100
+                
+                global_data.append({
+                    "Crypto": name, "Symbole": sym, "Prix": last,
+                    "Variation %": var, "Volume": fi.last_volume,
+                    "Volatilité": volatility
+                })
+        except: continue
     return pd.DataFrame(global_data)
-
 
 @st.cache_data(ttl=3600)
 def get_multi_history(tickers_dict, period="1y"):
@@ -113,249 +110,200 @@ def get_multi_history(tickers_dict, period="1y"):
     data = yf.download(symbols, period=period, progress=False)['Close']
     return data
 
-
 @st.cache_data(ttl=3600)
 def get_detail_data(symbol, period="1y"):
     try:
         stock = yf.Ticker(symbol)
         hist = stock.history(period=period)
+        
+        # Calcul RSI
+        hist['RSI'] = calculate_rsi(hist['Close'])
+        # Calcul Moyenne Mobile 50 jours
+        hist['SMA50'] = hist['Close'].rolling(window=50).mean()
+        
         inf = stock.info
-
-        data_points = {
-            "yearLow": inf.get('fiftyTwoWeekLow', 0),
-            "yearHigh": inf.get('fiftyTwoWeekHigh', 0),
-            "volume24h": inf.get('volume24Hr', 0),
-            "supply": inf.get('circulatingSupply', 0),
-            "description": inf.get('description', 'Pas de description.')
-        }
-
         fi = stock.fast_info
-
-        # --- CORRECTION DU BUG ICI ---
-        # On vérifie si market_cap existe, sinon 0
-        mcap_safe = fi.market_cap if fi.market_cap is not None else 0
+        
+        # Calcul Drawdown (Distance du plus haut annuel)
+        year_high = inf.get('fiftyTwoWeekHigh', fi.last_price)
+        current = fi.last_price
+        drawdown = ((current - year_high) / year_high) * 100 if year_high else 0
 
         info_dict = {
-            "last": fi.last_price,
+            "last": current, 
             "prev": fi.previous_close,
-            "mcap": mcap_safe,  # On utilise la valeur sécurisée
-            **data_points
+            "yearLow": inf.get('fiftyTwoWeekLow', 0),
+            "yearHigh": year_high,
+            "drawdown": drawdown,
+            "rsi": hist['RSI'].iloc[-1] if len(hist) > 14 else 50
         }
         return hist, info_dict
-    except Exception as e:
-        return None, None
-
+    except: return None, None
 
 @st.cache_data(ttl=3600)
 def get_historical_data(symbol, period="1y"):
-    try:
-        return yf.Ticker(symbol).history(period=period)['Close']
-    except:
-        return None
-
+    try: return yf.Ticker(symbol).history(period=period)['Close']
+    except: return None
 
 # =========================================================
 # 3. NAVIGATION
 # =========================================================
-st.sidebar.title("💎 Crypto App")
-page = st.sidebar.radio("Menu :", ["Marché Global 🌍", "Analyse Crypto 🔍"])
+st.sidebar.title("⚡ Crypto Pro")
+page = st.sidebar.radio("Menu :", ["Vue Marché 🌍", "Analyse Technique 🔍"])
 
 if st.sidebar.button("🔄 Actualiser"):
     st.cache_data.clear()
     st.rerun()
 
-# COULEURS CRYPTO
-color_up = "#00ff88"
-color_down = "#ff0055"
-color_btc = "#f7931a"
+# COULEURS
+c_neon = "#00f2c3"
+c_purple = "#8e44ad"
+c_danger = "#ff0055"
+c_warn = "#f39c12"
 
 # =========================================================
-# PAGE 1 : MARCHÉ GLOBAL
+# PAGE 1 : VUE MARCHÉ (GLOBALE)
 # =========================================================
-if page == "Marché Global 🌍":
-    st.title("🌍 Vue d'ensemble Crypto")
-
-    with st.spinner("Scan de la Blockchain..."):
+if page == "Vue Marché 🌍":
+    st.title("🌍 Radar du Marché Crypto")
+    
+    with st.spinner("Analyse de la volatilité..."):
         df_global = get_global_data()
-
-    best_perf = df_global.loc[df_global['Variation %'].idxmax()]
-    worst_perf = df_global.loc[df_global['Variation %'].idxmin()]
-    total_cap = df_global['Market Cap'].sum() / 1e9
-
+        
+    best = df_global.loc[df_global['Variation %'].idxmax()]
+    volatil = df_global.loc[df_global['Volatilité'].idxmax()]
+    
     col1, col2, col3 = st.columns(3)
-    col1.metric("Top Gainer 🚀", f"{best_perf['Crypto']}", f"{best_perf['Variation %']:.2f} %")
-    col2.metric("Top Loser 📉", f"{worst_perf['Crypto']}", f"{worst_perf['Variation %']:.2f} %")
-    col3.metric("Total Market (Suivi)", f"{total_cap:.2f} Mds €")
-
+    col1.metric("Top Perf 24h 🚀", f"{best['Crypto']}", f"{best['Variation %']:.2f} %")
+    col2.metric("Plus Volatile ⚡", f"{volatil['Crypto']}", f"Risk: {volatil['Volatilité']:.1f}")
+    col3.metric("Volume Leader 📊", df_global.sort_values('Volume', ascending=False).iloc[0]['Crypto'])
+    
     st.divider()
 
-    st.subheader("📈 Course des Altcoins (vs BTC)")
+    c_left, c_right = st.columns([2, 1])
+    
+    with c_left:
+        st.subheader("📊 Top Liquidité (Volume 24h)")
+        # Graphique des volumes classés (bien plus pertinent que le Market Cap)
+        df_vol = df_global.sort_values(by="Volume", ascending=False).head(10)
+        fig_vol = px.bar(df_vol, x='Volume', y='Crypto', orientation='h', 
+                         color='Volume', color_continuous_scale=['#2c3e50', c_neon])
+        fig_vol.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+                              xaxis=dict(showgrid=False), yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+        st.plotly_chart(fig_vol, use_container_width=True)
 
-    col_conf1, col_conf2 = st.columns([1, 2])
-
-    with col_conf1:
-        time_period_global = st.radio("Période :", ["1 Mois", "3 Mois", "6 Mois", "1 An"], index=3, horizontal=True)
-        period_map_global = {"1 Mois": "1mo", "3 Mois": "3mo", "6 Mois": "6mo", "1 An": "1y"}
-        selected_yahoo_period_global = period_map_global[time_period_global]
-
-    with col_conf2:
-        selected_tickers = st.multiselect("Comparer :", list(tickers.keys()), default=["ETHEREUM", "SOLANA", "BNB"])
-
-    df_history_dynamic = get_multi_history(tickers, period=selected_yahoo_period_global)
-
-    if selected_tickers:
-        fig_comp = go.Figure()
-        for name in selected_tickers:
-            sym = tickers[name]
-            if sym in df_history_dynamic.columns:
-                series = df_history_dynamic[sym].dropna()
-                if not series.empty:
-                    first_price = series.iloc[0]
-                    normalized_series = ((series - first_price) / first_price) * 100
-                    fig_comp.add_trace(go.Scatter(x=series.index, y=normalized_series, mode='lines', name=name))
-        fig_comp.update_layout(hovermode="x unified", margin=dict(t=10, b=0, l=0, r=0), height=450,
-                               paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                               xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#333'),
-                               legend=dict(orientation="h", y=1.02, font=dict(color='white')))
-        st.plotly_chart(fig_comp, use_container_width=True)
+    with c_right:
+        st.subheader("🎯 Matrice Risque/Gain")
+        # Scatter plot : Volatilité (X) vs Performance (Y)
+        fig_scatter = px.scatter(df_global, x="Volatilité", y="Variation %", color="Variation %",
+                                 text="Symbole", color_continuous_scale="RdYlGn", size="Volume")
+        fig_scatter.update_traces(textposition='top center', marker=dict(line=dict(width=1, color='white')))
+        fig_scatter.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                  xaxis_title="Volatilité (Risque)", yaxis_title="Performance 24h")
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
     st.divider()
+    
+    st.subheader("📋 Tableau de Bord (Prix & Volume)")
+    # Tableau stylisé sans Market Cap
+    st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']].style.format(
+        {"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Volume": "{:,.0f}", "Volatilité": "{:.1f}"}
+    ).background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5), use_container_width=True)
 
-    c1, c2 = st.columns([1.5, 1])
-    with c1:
-        st.subheader("📊 Prix en Direct")
-        st.dataframe(df_global.style.format({"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Market Cap": "{:,.0f}"})
-                     .background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5),
-                     use_container_width=True, height=600)
-    with c2:
-        st.subheader("🗺️ Dominance (Market Cap)")
-        fig_tree = px.treemap(df_global, path=['Crypto'], values='Market Cap', color='Variation %',
-                              color_continuous_scale=['#ff0055', '#1a1a2e', '#00ff88'], color_continuous_midpoint=0)
-        fig_tree.update_layout(margin=dict(t=0, l=0, r=0, b=0), height=600, paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_tree, use_container_width=True)
 
 # =========================================================
-# PAGE 2 : ANALYSE CRYPTO
+# PAGE 2 : ANALYSE TECHNIQUE (DÉTAILLÉE)
 # =========================================================
-elif page == "Analyse Crypto 🔍":
-
+elif page == "Analyse Technique 🔍":
+    
     st.sidebar.markdown("---")
-    selected_name = st.sidebar.selectbox("Choisir une Crypto :", list(tickers.keys()))
+    selected_name = st.sidebar.selectbox("Crypto :", list(tickers.keys()))
     symbol = tickers[selected_name]
 
     st.sidebar.markdown("---")
-    time_period_detail = st.sidebar.radio("Zoom :", ["1 Mois", "3 Mois", "6 Mois", "1 An", "2 Ans"], index=3)
-    period_map_detail = {"1 Mois": "1mo", "3 Mois": "3mo", "6 Mois": "6mo", "1 An": "1y", "2 Ans": "2y"}
-    selected_yahoo_period_detail = period_map_detail[time_period_detail]
+    period = st.sidebar.radio("Zoom :", ["3 Mois", "6 Mois", "1 An"], index=1)
+    p_map = {"3 Mois": "3mo", "6 Mois": "6mo", "1 An": "1y"}
+    
+    with st.spinner("Calcul des indicateurs..."):
+        hist, info = get_detail_data(symbol, period=p_map[period])
+        btc_hist = get_historical_data("BTC-EUR", period=p_map[period])
 
-    with st.spinner(f"Chargement {selected_name}..."):
-        hist, info = get_detail_data(symbol, period=selected_yahoo_period_detail)
-        btc_hist = get_historical_data("BTC-EUR", period=selected_yahoo_period_detail)
+    if hist is None: st.error("Erreur data").stop()
 
-    if hist is None or hist.empty:
-        st.error("Données indisponibles.")
-        st.stop()
+    # --- JAUGE RSI (Indicateur clé en crypto) ---
+    def plot_rsi_gauge(rsi_val):
+        color = c_danger if rsi_val > 70 else (c_neon if rsi_val < 30 else "#ffffff")
+        status = "SURACHAT (Vendre?)" if rsi_val > 70 else ("SURVENTE (Acheter?)" if rsi_val < 30 else "Neutre")
+        
+        fig = go.Figure(go.Indicator(
+            mode = "gauge+number", value = rsi_val,
+            title = {'text': f"RSI (Momentum)<br><span style='font-size:0.6em;color:{color}'>{status}</span>"},
+            gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': color},
+                     'steps': [{'range': [0, 30], 'color': 'rgba(0,255,136,0.2)'},
+                               {'range': [70, 100], 'color': 'rgba(255,0,85,0.2)'}],
+                     'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': rsi_val}}
+        ))
+        fig.update_layout(height=200, margin=dict(t=40, b=10, l=30, r=30), paper_bgcolor='rgba(0,0,0,0)')
+        return fig
 
-
-    # --- FONCTIONS GRAPHIQUES ---
-    def plot_candlestick_crypto(df):
+    # --- GRAPHIQUE PRIX + MOYENNE MOBILE ---
+    def plot_pro_chart(df):
         fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                                     increasing_line_color=color_up, decreasing_line_color=color_down, name='Prix'))
-        fig.update_layout(margin=dict(t=10, b=20, l=0, r=0), height=300, xaxis_rangeslider_visible=False,
+        # Bougies
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='Prix'))
+        # Moyenne Mobile 50 (Tendance)
+        fig.add_trace(go.Scatter(x=df.index, y=df['SMA50'], line=dict(color=c_warn, width=2), name='Moyenne 50j'))
+        
+        fig.update_layout(height=350, margin=dict(t=10, b=10, l=0, r=0), 
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                          xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#333'))
+                          xaxis=dict(showgrid=False, rangeslider=dict(visible=False)), 
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.1)'),
+                          legend=dict(orientation="h", y=1, x=0))
+        return fig
+    
+    # --- DRAWDOWN (Distance du sommet) ---
+    def plot_drawdown(current, high, low):
+        dd = ((current - high) / high) * 100
+        fig = go.Figure(go.Indicator(
+            mode = "number", value = dd, number = {'suffix': "%", 'font': {'color': c_danger if dd < -20 else "white"}},
+            title = {"text": "Distance du Sommet (ATH 1 an)"}
+        ))
+        fig.update_layout(height=150, margin=dict(t=30, b=0), paper_bgcolor='rgba(0,0,0,0)')
         return fig
 
+    # --- MISE EN PAGE ---
+    st.title(f"🔍 Analyse : {selected_name}")
 
-    def plot_volume_bar(df):
-        colors = [color_up if row['Close'] > row['Open'] else color_down for index, row in df.iterrows()]
-        fig = go.Figure(go.Bar(x=df.index, y=df['Volume'], marker_color=colors))
-        fig.update_layout(title="Volume des Transactions", height=200, margin=dict(t=30, b=10, l=10, r=10),
-                          paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                          xaxis=dict(visible=False), yaxis=dict(showgrid=False))
-        return fig
+    col_L, col_M, col_R = st.columns([1, 1.5, 1.5], gap="medium")
 
+    with col_L:
+        st.write("##### ⚡ Momentum")
+        st.plotly_chart(plot_rsi_gauge(info['rsi']), use_container_width=True)
+        st.divider()
+        st.plotly_chart(plot_drawdown(info['last'], info['yearHigh'], info['yearLow']), use_container_width=True)
 
-    def plot_vs_bitcoin(crypto_series, btc_series, name):
-        df = pd.concat([crypto_series, btc_series], axis=1, join='inner')
-        df.columns = ['Crypto', 'BTC']
-        df = (df / df.iloc[0]) * 100
+    with col_M:
+        st.write("##### 🎯 Prix & Tendance")
+        k1, k2 = st.columns(2)
+        var = ((info['last']-info['prev'])/info['prev'])*100
+        k1.metric("Prix Actuel", f"{info['last']:.4f}€")
+        k2.metric("24h", f"{var:+.2f}%", delta=f"{var:+.2f}%")
+        
+        st.write("##### 📈 Comparaison vs Bitcoin")
+        # Comparatif BTC
+        if btc_hist is not None:
+            norm_crypto = (hist['Close'] / hist['Close'].iloc[0]) * 100
+            norm_btc = (btc_hist / btc_hist.iloc[0]) * 100
+            
+            fig_cmp = go.Figure()
+            fig_cmp.add_trace(go.Scatter(x=hist.index, y=norm_crypto, name=selected_name, line=dict(color=c_neon)))
+            fig_cmp.add_trace(go.Scatter(x=hist.index, y=norm_btc, name="Bitcoin", line=dict(color="orange", dash='dot')))
+            fig_cmp.update_layout(height=250, margin=dict(t=10, b=10, l=0, r=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                                  yaxis=dict(showgrid=False), xaxis=dict(showgrid=False), showlegend=True, legend=dict(orientation='h'))
+            st.plotly_chart(fig_cmp, use_container_width=True)
 
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(x=df.index, y=df['Crypto'], mode='lines', name=name, line=dict(color='#8e44ad', width=2)))
-        fig.add_trace(go.Scatter(x=df.index, y=df['BTC'], mode='lines', name="Bitcoin",
-                                 line=dict(color=color_btc, width=2, dash='dot')))
-        fig.update_layout(title=f"Performance relative vs Bitcoin", height=250, margin=dict(t=40, b=0, l=0, r=0),
-                          paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                          xaxis=dict(showgrid=False), yaxis=dict(gridcolor='#333'),
-                          legend=dict(orientation="h", y=1.1, font=dict(color='white')))
-        return fig
-
-
-    def plot_52week_range(current, low, high):
-        if not low or not high: return go.Figure()
-        fig = go.Figure()
-        fig.add_shape(type="rect", x0=low, y0=0, x1=high, y1=1, fillcolor="#333", line=dict(color="rgba(0,0,0,0)"),
-                      layer="below")
-        fig.add_shape(type="rect", x0=low, y0=0, x1=current, y1=1, fillcolor="#8e44ad",
-                      line=dict(color="rgba(0,0,0,0)"), layer="below")
-        fig.add_trace(go.Scatter(x=[current], y=[1.3], mode='text', text=["▼"], textfont=dict(size=20, color="white"),
-                                 showlegend=False))
-        fig.update_layout(title=dict(text="Range Annuel (Min/Max)", font=dict(size=14, color="white")),
-                          xaxis=dict(showgrid=False, tickvals=[low, high], ticktext=[f"{low:.4f}", f"{high:.4f}"],
-                                     tickfont=dict(color='white')),
-                          yaxis=dict(visible=False, range=[0, 2]), margin=dict(t=30, b=20, l=10, r=10),
-                          paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=120)
-        return fig
-
-
-    # --- CONTENU DE LA PAGE ---
-    st.title(f"🪙 Analyse : {selected_name}")
-
-    col_left, col_mid, col_right = st.columns([1, 1.5, 1.5], gap="medium")
-
-    with col_left:
-        with st.container():
-            st.write("##### 📊 Volumes & Range")
-            st.plotly_chart(plot_volume_bar(hist), use_container_width=True, config={'displayModeBar': False})
-            st.divider()
-            if info['yearLow'] and info['yearHigh']:
-                st.plotly_chart(plot_52week_range(info['last'], info['yearLow'], info['yearHigh']),
-                                use_container_width=True, config={'displayModeBar': False})
-
-    with col_mid:
-        with st.container():
-            st.write("##### 🚀 Indicateurs Clés")
-            kpi1, kpi2, kpi3 = st.columns(3)
-            var_day = ((info['last'] - info['prev']) / info['prev']) * 100
-
-            # --- AFFICHAGE SECURISE ---
-            # Si market cap est 0, on affiche "N/A" ou 0.0, mais on évite le crash
-            mcap_display = f"{info['mcap'] / 1e9:.1f} B€" if info['mcap'] > 0 else "N/A"
-
-            kpi1.metric("Prix", f"{info['last']:.4f}€")
-            kpi2.metric("24h", f"{var_day:+.2f}%", delta=f"{var_day:+.2f}%")
-            kpi3.metric("Market Cap", mcap_display)
-
-            st.divider()
-
-            if btc_hist is not None and not btc_hist.empty:
-                st.plotly_chart(plot_vs_bitcoin(hist['Close'], btc_hist, selected_name), use_container_width=True,
-                                config={'displayModeBar': False})
-
-    with col_right:
-        with st.container():
-            st.write(f"##### 🕯️ Chart ({time_period_detail})")
-            st.plotly_chart(plot_candlestick_crypto(hist), use_container_width=True, config={'displayModeBar': False})
-
-        with st.container():
-            st.write("##### ℹ️ Infos Token")
-            supply = info.get('supply', 0)
-            if supply:
-                st.metric("Circulating Supply", f"{supply:,.0f}")
-            else:
-                st.info("Supply inconnu")
-
-            st.caption("Données temps réel fournies par Yahoo Finance.")
+    with col_R:
+        st.write("##### 🕯️ Graphique Technique (SMA 50)")
+        st.plotly_chart(plot_pro_chart(hist), use_container_width=True)
+        
+        st.caption(f"Plus bas an: {info['yearLow']:.2f}€ | Plus haut an: {info['yearHigh']:.2f}€")
