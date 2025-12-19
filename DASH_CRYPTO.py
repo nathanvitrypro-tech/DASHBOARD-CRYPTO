@@ -25,31 +25,36 @@ st.markdown("""
         background-attachment: fixed;
     }
     
-    /* Optimisation des marges pour gagner de la place */
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+    /* Optimisation des marges */
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
     
     /* Cards Transparente */
     div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
         background-color: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        padding: 15px;
+        border-radius: 12px;
+        padding: 20px;
     }
     
     h1, h2, h3 { color: #ffffff; font-weight: 800; }
-    h5 { color: #b8a4ff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; }
+    h5 { color: #b8a4ff; font-weight: 600; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
     
     /* Metrics Colorés */
     [data-testid="stMetricValue"] {
-        font-size: 26px;
+        font-size: 28px;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
     }
+    
+    /* Radio Button Style */
+    div[role="radiogroup"] > label > div:first-child {
+        background-color: #2c3e50;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- LISTE DES CRYPTOS (Blue Chips Uniquement) ---
+# --- LISTE DES CRYPTOS (Blue Chips) ---
 tickers = {
     "BITCOIN": "BTC-EUR", "ETHEREUM": "ETH-EUR", "SOLANA": "SOL-EUR", "BNB": "BNB-EUR",
     "XRP": "XRP-EUR", "CARDANO": "ADA-EUR", "DOGECOIN": "DOGE-EUR", "AVALANCHE": "AVAX-EUR", 
@@ -72,17 +77,39 @@ def calculate_indicators(data):
     # SMA (Moyennes Mobiles)
     data['SMA50'] = data['Close'].rolling(window=50).mean()
     data['SMA200'] = data['Close'].rolling(window=200).mean()
+    
+    # MACD (Nouvel indicateur Trend)
+    ema12 = data['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD'] = ema12 - ema26
+    data['Signal_Line'] = data['MACD'].ewm(span=9, adjust=False).mean()
+    
     return data
 
-def get_signal(price, sma50, sma200, rsi):
-    # Logique d'investisseur simple
-    score = 0
-    if price > sma50: score += 1
-    if price > sma200: score += 2 # Tendance fond
-    if rsi < 30: score += 1 # Survente (Buy dip)
-    if rsi > 70: score -= 1 # Surchauffe (Sell top)
+def calculate_sharpe_ratio(data):
+    # Ratio de Sharpe Annualisé (Return / Risk)
+    daily_returns = data['Close'].pct_change().dropna()
+    mean_return = daily_returns.mean()
+    std_dev = daily_returns.std()
     
-    if score >= 3: return "🟢 ACHAT FORT"
+    if std_dev == 0: return 0
+    # 252 jours de trading crypto (365 en réalité mais 252 est le standard finance)
+    # Pour crypto on utilise souvent 365, prenons 365 pour être précis
+    annualized_sharpe = (mean_return / std_dev) * np.sqrt(365)
+    return annualized_sharpe
+
+def get_signal(price, sma50, sma200, rsi, macd, macd_signal):
+    score = 0
+    # Trend
+    if price > sma50: score += 1
+    if price > sma200: score += 2 
+    # Momentum
+    if rsi < 30: score += 1 
+    if rsi > 70: score -= 1
+    # MACD Cross
+    if macd > macd_signal: score += 1
+    
+    if score >= 4: return "🟢 ACHAT FORT"
     elif score >= 1: return "🟢 ACHAT"
     elif score <= -1: return "🔴 VENTE"
     else: return "⚪ NEUTRE"
@@ -93,7 +120,7 @@ def get_global_data():
     for name, sym in tickers.items():
         try:
             t = yf.Ticker(sym)
-            hist = t.history(period="6mo") # Besoin de plus d'histo pour SMA
+            hist = t.history(period="6mo") 
             fi = t.fast_info
             
             if fi.last_price is None: continue 
@@ -107,9 +134,12 @@ def get_global_data():
                 
                 # Signal
                 last_rsi = hist['RSI'].iloc[-1]
+                last_macd = hist['MACD'].iloc[-1]
+                last_sig = hist['Signal_Line'].iloc[-1]
                 sma50 = hist['SMA50'].iloc[-1]
                 sma200 = hist['SMA200'].iloc[-1] if len(hist) > 200 else sma50
-                signal = get_signal(last, sma50, sma200, last_rsi)
+                
+                signal = get_signal(last, sma50, sma200, last_rsi, last_macd, last_sig)
                 
                 global_data.append({
                     "Crypto": name, "Symbole": sym, "Prix": last,
@@ -127,6 +157,8 @@ def get_detail_data(symbol, period="1y"):
         if hist.empty: return None, None
 
         hist = calculate_indicators(hist)
+        sharpe = calculate_sharpe_ratio(hist)
+        
         inf = stock.info
         fi = stock.fast_info
         
@@ -138,7 +170,8 @@ def get_detail_data(symbol, period="1y"):
             "last": last, "prev": fi.previous_close,
             "yearHigh": high, "yearLow": inf.get('fiftyTwoWeekLow', 0),
             "rsi": hist['RSI'].iloc[-1],
-            "sma200": hist['SMA200'].iloc[-1] if len(hist) > 200 else None
+            "sma200": hist['SMA200'].iloc[-1] if 'SMA200' in hist.columns and not pd.isna(hist['SMA200'].iloc[-1]) else None,
+            "sharpe": sharpe
         }
         return hist, info_dict
     except: return None, None
@@ -157,7 +190,6 @@ if st.sidebar.button("Actualiser Data"): st.cache_data.clear(); st.rerun()
 # --- COULEURS ---
 c_up = "#00f2c3"
 c_down = "#ff0055"
-c_text = "#ffffff"
 
 if page == "Vue Globale 🌍":
     st.title("🌍 Marché & Opportunités")
@@ -173,7 +205,7 @@ if page == "Vue Globale 🌍":
         c1.metric("🚀 Top Perf", best['Crypto'], f"{best['Variation %']:.2f}%")
         c2.metric("💀 Flop Perf", worst['Crypto'], f"{worst['Variation %']:.2f}%")
         c3.metric("🔥 Volatilité Max", df.loc[df['Volatilité'].idxmax()]['Crypto'])
-        c4.metric("💰 Volume Max", df.sort_values('Volume', ascending=False).iloc[0]['Crypto'])
+        c4.metric("💰 Volume Leader", df.sort_values('Volume', ascending=False).iloc[0]['Crypto'])
         
         st.divider()
         
@@ -182,38 +214,44 @@ if page == "Vue Globale 🌍":
         
         with c_mat:
             st.subheader("🎯 Matrice Risque/Récompense")
-            st.caption("On cherche les bulles en HAUT (Gains) et à GAUCHE (Sûr).")
+            st.caption("ℹ️ HAUT = Gains | GAUCHE = Stable | DROITE = Risqué")
             
-            # ASTUCE LISIBILITÉ : On ne met du texte que sur le TOP 8 Volume
+            # Label propre : seulement les gros volumes
             top_vol_symbols = df.sort_values('Volume', ascending=False).head(8)['Symbole'].tolist()
             df['Label'] = df.apply(lambda x: x['Symbole'] if x['Symbole'] in top_vol_symbols else "", axis=1)
 
             fig = px.scatter(df, x="Volatilité", y="Variation %", size="Volume", 
-                             color="Signal", # Couleur selon le signal achat/vente
+                             color="Signal", 
                              text="Label", hover_name="Crypto",
                              color_discrete_map={"🟢 ACHAT": c_up, "🟢 ACHAT FORT": "#00ff00", "🔴 VENTE": c_down, "⚪ NEUTRE": "grey"})
             
             fig.update_traces(textposition='top center', textfont=dict(color='white', size=11))
             fig.update_layout(height=500, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(255,255,255,0.05)',
-                              xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
-                              yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'))
+                              xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Risque (Volatilité)"),
+                              yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Performance 24h"))
             st.plotly_chart(fig, use_container_width=True)
 
         with c_list:
-            st.subheader("🚦 Signaux Techniques")
+            st.subheader("🚦 Algo Signaux")
+            st.caption("Basé sur RSI + Moyennes Mobiles + MACD")
             st.dataframe(df[['Symbole', 'Prix', 'Signal']].style.applymap(
                 lambda v: f'color: {c_up}; font-weight: bold' if "ACHAT" in v else (f'color: {c_down}' if "VENTE" in v else 'color: gray'), 
                 subset=['Signal']
-            ).format({"Prix": "{:.4f}€"}), height=500, use_container_width=True)
+            ).format({"Prix": "{:.4f}€"}), height=450, use_container_width=True)
 
 elif page == "Analyse Deep Dive 🔍":
     st.sidebar.markdown("---")
     sel_crypto = st.sidebar.selectbox("Sélectionner l'actif :", list(tickers.keys()))
     sym = tickers[sel_crypto]
     
-    with st.spinner(f"Analyse approfondie de {sel_crypto}..."):
-        hist, info = get_detail_data(sym)
-        btc = get_btc_data()
+    # --- NOYAU TEMPOREL (NEW) ---
+    st.sidebar.markdown("### ⏱️ Échelle de Temps")
+    time_frame = st.sidebar.radio("Zoom Graphique :", ["6 Mois", "1 An", "5 Ans"], index=1)
+    period_map = {"6 Mois": "6mo", "1 An": "1y", "5 Ans": "5y"}
+    selected_period = period_map[time_frame]
+    
+    with st.spinner(f"Chargement {time_frame}..."):
+        hist, info = get_detail_data(sym, period=selected_period)
     
     if hist is None: st.error("Pas de données").stop()
 
@@ -224,19 +262,19 @@ elif page == "Analyse Deep Dive 🔍":
     var = ((info['last'] - info['prev'])/info['prev'])*100
     dist_ath = ((info['last'] - info['yearHigh'])/info['yearHigh'])*100
     
-    col_kpi1.metric("Prix Actuel", f"{info['last']:.4f} €", f"{var:.2f}%")
-    col_kpi2.metric("Distance ATH (Sommet)", f"{dist_ath:.1f}%", help="Distance par rapport au plus haut de l'année")
+    # Metric SHARPE RATIO (NEW)
+    sharpe = info['sharpe']
+    sharpe_color = "normal" if sharpe > 1 else ("off" if sharpe > 0 else "inverse")
+    sharpe_label = "Excellent" if sharpe > 2 else ("Bon" if sharpe > 1 else "Risqué")
     
-    # TENDANCE FOND
-    trend = "HAUSSIÈRE (Bullish)" if (info['sma200'] and info['last'] > info['sma200']) else "BAISSIÈRE (Bearish)"
-    trend_color = "normal" if "BAISSIÈRE" in trend else "inverse"
-    col_kpi3.metric("Tendance de Fond", trend, delta_color=trend_color)
+    col_kpi1.metric("Prix Actuel", f"{info['last']:.4f} €", f"{var:.2f}%")
+    col_kpi2.metric("Distance ATH", f"{dist_ath:.1f}%", help="Distance au plus haut annuel")
+    col_kpi3.metric("Ratio Sharpe (Risk/Reward)", f"{sharpe:.2f}", sharpe_label, delta_color=sharpe_color, help="> 1 est bon. Indique si le gain vaut le risque pris.")
     col_kpi4.metric("RSI (Momentum)", f"{info['rsi']:.1f}")
 
     st.divider()
 
     # --- GRAPHIQUES ---
-    # Layout : Gauche (Momentum compact) | Milieu (Gros Chart) | Droite (Info)
     c_g1, c_g2 = st.columns([1, 3])
 
     with c_g1:
@@ -248,21 +286,26 @@ elif page == "Analyse Deep Dive 🔍":
                    'bar': {'color': c_down if info['rsi']>70 else (c_up if info['rsi']<30 else "white")},
                    'steps': [{'range': [0, 30], 'color': 'rgba(0,255,136,0.1)'}, {'range': [70, 100], 'color': 'rgba(255,0,85,0.1)'}]}
         ))
-        # Hauteur réduite pour éviter l'espace vide
-        fig_rsi.update_layout(height=250, margin=dict(t=30, b=10, l=30, r=30), paper_bgcolor='rgba(0,0,0,0)')
+        fig_rsi.update_layout(height=250, margin=dict(t=30, b=10, l=20, r=20), paper_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_rsi, use_container_width=True)
         
-        st.info("💡 **Stratégie RSI :**\n\n< 30 : Zone d'achat potentielle.\n\n> 70 : Zone de prise de profits.")
+        st.caption(f"**Analyse sur {time_frame} :**")
+        if info['sharpe'] < 0:
+            st.warning("⚠️ Attention : Rendement négatif ajusté au risque sur cette période.")
+        elif info['sharpe'] > 2:
+            st.success("💎 Pépite : Excellent rendement pour le risque pris.")
 
     with c_g2:
-        st.subheader("🕯️ Graphique Investisseur (SMA 50 & 200)")
+        st.subheader(f"🕯️ Graphique {time_frame} (SMA 50 & 200)")
         fig = go.Figure()
         fig.add_trace(go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name="Prix"))
         
         # Moyennes mobiles
-        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA50'], line=dict(color="orange", width=1), name="Moyenne 50j (Court Terme)"))
-        if 'SMA200' in hist.columns:
-            fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA200'], line=dict(color="#00f2c3", width=2), name="Moyenne 200j (Long Terme)"))
+        fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA50'], line=dict(color="orange", width=1), name="Moyenne 50j"))
+        
+        # SMA 200 seulement si assez de données
+        if info['sma200']:
+            fig.add_trace(go.Scatter(x=hist.index, y=hist['SMA200'], line=dict(color="#00f2c3", width=2), name="Moyenne 200j (Trend Long)"))
 
         fig.update_layout(height=500, margin=dict(t=20, b=20, l=0, r=0), 
                           paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
