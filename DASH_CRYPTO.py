@@ -188,8 +188,9 @@ if page == "Vue Marché 🌍":
         st.plotly_chart(fig_vol, use_container_width=True)
 
     with c_right:
-        # Scatter plot optimisé pour la lisibilité avec HELP
-        st.subheader("🎯 Matrice Risque/Gain", help="AXE Y (Haut/Bas) : Performance. Plus c'est haut, plus ça monte.\n\nAXE X (Gauche/Droite) : Volatilité. Plus c'est à droite, plus le prix bouge violemment (Risqué).")
+        # VERSION COMPATIBLE : Pas de 'help', on utilise st.caption
+        st.subheader("🎯 Matrice Risque/Gain")
+        st.caption("ℹ️ HAUT = Ça monte | DROITE = Risqué (Volatile)")
         
         fig_scatter = px.scatter(
             df_global, 
@@ -210,7 +211,7 @@ if page == "Vue Marché 🌍":
         )
         
         fig_scatter.update_layout(
-            height=500, 
+            height=460, 
             paper_bgcolor='rgba(0,0,0,0)', 
             plot_bgcolor='rgba(255,255,255,0.05)', 
             xaxis_title="RISQUE (Volatilité mensuelle)", 
@@ -224,10 +225,14 @@ if page == "Vue Marché 🌍":
     st.divider()
     
     st.subheader("📋 Tableau de Bord (Prix & Volume)")
-    # Tableau stylisé
-    st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']].style.format(
-        {"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Volume": "{:,.0f}", "Volatilité": "{:.1f}"}
-    ).background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5), use_container_width=True)
+    # Note : Si background_gradient échoue, il faut installer matplotlib (pip install matplotlib)
+    try:
+        st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']].style.format(
+            {"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Volume": "{:,.0f}", "Volatilité": "{:.1f}"}
+        ).background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5), use_container_width=True)
+    except:
+        st.warning("⚠️ Installez matplotlib pour voir les couleurs (pip install matplotlib)")
+        st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']], use_container_width=True)
 
 
 # =========================================================
@@ -296,21 +301,22 @@ elif page == "Analyse Technique 🔍":
     col_L, col_M, col_R = st.columns([1, 1.5, 1.5], gap="medium")
 
     with col_L:
-        # RSI avec aide et alertes
-        st.write("##### ⚡ Momentum (RSI)", help="Le RSI est un compteur de vitesse (0-100).\n\n> 70 (ROUGE) : Surchauffe. Le prix est monté trop vite, risque de correction.\n\n< 30 (VERT) : Survente. Le prix a trop chuté, opportunité de rebond possible.")
+        # VERSION COMPATIBLE : Pas de 'help', on utilise st.caption
+        st.write("##### ⚡ Momentum (RSI)")
+        st.caption("ℹ️ >70: Surchauffe (Attention) | <30: Opportunité")
         st.plotly_chart(plot_rsi_gauge(info['rsi']), use_container_width=True)
         
         if info['rsi'] > 70:
-            st.warning("⚠️ Zone de Surchauffe (Prudence)")
+            st.warning("⚠️ Zone de Surchauffe")
         elif info['rsi'] < 30:
-            st.success("✅ Zone d'Opportunité (Bas prix)")
+            st.success("✅ Zone d'Opportunité")
         else:
-            st.info("🔹 Zone Neutre (Tendance stable)")
+            st.info("🔹 Zone Neutre")
             
         st.divider()
         
-        # Drawdown avec aide
-        st.write("##### 📉 Distance du Sommet", help="Indique le pourcentage de baisse depuis le prix le plus haut de l'année (ATH).\n\n0% = Au sommet historique.\n-50% = Le prix a été divisé par 2 depuis le haut.")
+        st.write("##### 📉 Distance du Sommet")
+        st.caption("ℹ️ % de chute depuis le plus haut annuel")
         st.plotly_chart(plot_drawdown(info['last'], info['yearHigh'], info['yearLow']), use_container_width=True)
         st.caption(f"Sommet 1 an : **{info['yearHigh']:.2f}€**")
 
