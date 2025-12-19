@@ -6,7 +6,7 @@ import yfinance as yf
 import numpy as np
 
 # =========================================================
-# 1. CONFIGURATION ET STYLE (MODE TRADER)
+# 1. CONFIGURATION ET STYLE (MODE TRADER PRO)
 # =========================================================
 st.set_page_config(layout="wide", page_title="Crypto Pro Dashboard", page_icon="⚡")
 
@@ -105,12 +105,6 @@ def get_global_data():
     return pd.DataFrame(global_data)
 
 @st.cache_data(ttl=3600)
-def get_multi_history(tickers_dict, period="1y"):
-    symbols = list(tickers_dict.values())
-    data = yf.download(symbols, period=period, progress=False)['Close']
-    return data
-
-@st.cache_data(ttl=3600)
 def get_detail_data(symbol, period="1y"):
     try:
         stock = yf.Ticker(symbol)
@@ -127,7 +121,8 @@ def get_detail_data(symbol, period="1y"):
         # Calcul Drawdown (Distance du plus haut annuel)
         year_high = inf.get('fiftyTwoWeekHigh', fi.last_price)
         current = fi.last_price
-        drawdown = ((current - year_high) / year_high) * 100 if year_high else 0
+        # Sécurité pour éviter division par zéro
+        drawdown = ((current - year_high) / year_high) * 100 if year_high and year_high > 0 else 0
 
         info_dict = {
             "last": current, 
@@ -184,28 +179,52 @@ if page == "Vue Marché 🌍":
     
     with c_left:
         st.subheader("📊 Top Liquidité (Volume 24h)")
-        # Graphique des volumes classés (bien plus pertinent que le Market Cap)
+        # Graphique des volumes classés
         df_vol = df_global.sort_values(by="Volume", ascending=False).head(10)
         fig_vol = px.bar(df_vol, x='Volume', y='Crypto', orientation='h', 
                          color='Volume', color_continuous_scale=['#2c3e50', c_neon])
-        fig_vol.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
+        fig_vol.update_layout(height=500, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', 
                               xaxis=dict(showgrid=False), yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
         st.plotly_chart(fig_vol, use_container_width=True)
 
     with c_right:
-        st.subheader("🎯 Matrice Risque/Gain")
-        # Scatter plot : Volatilité (X) vs Performance (Y)
-        fig_scatter = px.scatter(df_global, x="Volatilité", y="Variation %", color="Variation %",
-                                 text="Symbole", color_continuous_scale="RdYlGn", size="Volume")
-        fig_scatter.update_traces(textposition='top center', marker=dict(line=dict(width=1, color='white')))
-        fig_scatter.update_layout(height=400, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                                  xaxis_title="Volatilité (Risque)", yaxis_title="Performance 24h")
+        # Scatter plot optimisé pour la lisibilité avec HELP
+        st.subheader("🎯 Matrice Risque/Gain", help="AXE Y (Haut/Bas) : Performance. Plus c'est haut, plus ça monte.\n\nAXE X (Gauche/Droite) : Volatilité. Plus c'est à droite, plus le prix bouge violemment (Risqué).")
+        
+        fig_scatter = px.scatter(
+            df_global, 
+            x="Volatilité", 
+            y="Variation %", 
+            color="Variation %",
+            size="Volume", # La taille des bulles dépend du volume
+            text="Symbole", 
+            color_continuous_scale="RdYlGn",
+            hover_name="Crypto",
+            hover_data={"Volatilité": ":.2f", "Variation %": ":.2f%", "Volume": ":,.0f", "Symbole": False}
+        )
+        
+        fig_scatter.update_traces(
+            textposition='top center', 
+            marker=dict(line=dict(width=1, color='white'), opacity=0.9),
+            textfont=dict(color='white', size=11)
+        )
+        
+        fig_scatter.update_layout(
+            height=500, 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(255,255,255,0.05)', 
+            xaxis_title="RISQUE (Volatilité mensuelle)", 
+            yaxis_title="PERFORMANCE (24h)",
+            showlegend=False,
+            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', zeroline=False),
+            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', zeroline=False)
+        )
         st.plotly_chart(fig_scatter, use_container_width=True)
 
     st.divider()
     
     st.subheader("📋 Tableau de Bord (Prix & Volume)")
-    # Tableau stylisé sans Market Cap
+    # Tableau stylisé
     st.dataframe(df_global[['Crypto', 'Prix', 'Variation %', 'Volume', 'Volatilité']].style.format(
         {"Prix": "{:.4f} €", "Variation %": "{:+.2f} %", "Volume": "{:,.0f}", "Volatilité": "{:.1f}"}
     ).background_gradient(subset=["Variation %"], cmap="RdYlGn", vmin=-5, vmax=5), use_container_width=True)
@@ -233,7 +252,7 @@ elif page == "Analyse Technique 🔍":
     # --- JAUGE RSI (Indicateur clé en crypto) ---
     def plot_rsi_gauge(rsi_val):
         color = c_danger if rsi_val > 70 else (c_neon if rsi_val < 30 else "#ffffff")
-        status = "SURACHAT (Vendre?)" if rsi_val > 70 else ("SURVENTE (Acheter?)" if rsi_val < 30 else "Neutre")
+        status = "SURACHAT" if rsi_val > 70 else ("SURVENTE" if rsi_val < 30 else "Neutre")
         
         fig = go.Figure(go.Indicator(
             mode = "gauge+number", value = rsi_val,
@@ -277,10 +296,23 @@ elif page == "Analyse Technique 🔍":
     col_L, col_M, col_R = st.columns([1, 1.5, 1.5], gap="medium")
 
     with col_L:
-        st.write("##### ⚡ Momentum")
+        # RSI avec aide et alertes
+        st.write("##### ⚡ Momentum (RSI)", help="Le RSI est un compteur de vitesse (0-100).\n\n> 70 (ROUGE) : Surchauffe. Le prix est monté trop vite, risque de correction.\n\n< 30 (VERT) : Survente. Le prix a trop chuté, opportunité de rebond possible.")
         st.plotly_chart(plot_rsi_gauge(info['rsi']), use_container_width=True)
+        
+        if info['rsi'] > 70:
+            st.warning("⚠️ Zone de Surchauffe (Prudence)")
+        elif info['rsi'] < 30:
+            st.success("✅ Zone d'Opportunité (Bas prix)")
+        else:
+            st.info("🔹 Zone Neutre (Tendance stable)")
+            
         st.divider()
+        
+        # Drawdown avec aide
+        st.write("##### 📉 Distance du Sommet", help="Indique le pourcentage de baisse depuis le prix le plus haut de l'année (ATH).\n\n0% = Au sommet historique.\n-50% = Le prix a été divisé par 2 depuis le haut.")
         st.plotly_chart(plot_drawdown(info['last'], info['yearHigh'], info['yearLow']), use_container_width=True)
+        st.caption(f"Sommet 1 an : **{info['yearHigh']:.2f}€**")
 
     with col_M:
         st.write("##### 🎯 Prix & Tendance")
