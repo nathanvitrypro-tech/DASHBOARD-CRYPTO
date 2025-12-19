@@ -25,17 +25,39 @@ st.markdown("""
         background-attachment: fixed;
     }
     
-    /* --- CORRECTION CRITIQUE : MARGE HAUTE FORCÉE --- */
     .block-container { 
-        padding-top: 5rem !important; /* 5rem = BEAUCOUP d'espace en haut */
+        padding-top: 5rem !important; 
         padding-bottom: 2rem; 
     }
     
-    /* KPI Cards Compactes */
+    /* --- TOOLTIP ICON STYLE (?) --- */
+    .tooltip-icon {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        width: 14px;
+        height: 14px;
+        background-color: rgba(255,255,255,0.2);
+        color: #e0e0e0;
+        border-radius: 50%;
+        font-size: 9px;
+        margin-left: 6px;
+        cursor: help;
+        vertical-align: middle;
+        position: relative;
+        top: -1px;
+        transition: all 0.2s;
+    }
+    .tooltip-icon:hover {
+        background-color: rgba(255,255,255,0.8);
+        color: #000;
+    }
+
+    /* KPI Cards */
     .kpi-card {
         background-color: rgba(255, 255, 255, 0.05);
         border-radius: 8px;
-        padding: 8px; /* Padding réduit */
+        padding: 10px;
         text-align: center;
         border: 1px solid rgba(255, 255, 255, 0.05);
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -44,25 +66,25 @@ st.markdown("""
     
     .kpi-title {
         color: #BBBBBB !important;
-        font-size: 0.7rem;
+        font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 1px;
-        margin-bottom: 0px;
-        display: block;
+        margin-bottom: 2px;
+        display: inline-block; /* Pour aligner avec le tooltip */
     }
     
     .kpi-value {
-        font-size: 1.4rem; /* Taille adaptée */
+        font-size: 1.5rem;
         font-weight: 800;
         color: #FFFFFF;
         background: linear-gradient(90deg, #00f2c3, #0099ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin: 2px 0;
+        line-height: 1.2;
     }
     
-    .kpi-detail { font-size: 0.75rem; }
+    .kpi-detail { font-size: 0.8rem; margin-top: 2px; }
     
     .kpi-delta-pos { color: #00f2c3; font-weight: bold; }
     .kpi-delta-neg { color: #ff0055; font-weight: bold; }
@@ -71,7 +93,7 @@ st.markdown("""
     /* Scorecard (Gauche) */
     .scorecard {
         background-color: rgba(255,255,255,0.05);
-        padding: 10px;
+        padding: 12px;
         border-radius: 8px;
         border: 1px solid rgba(255,255,255,0.1);
         margin-bottom: 8px;
@@ -79,10 +101,12 @@ st.markdown("""
     
     .score-title {
         color: #FFFFFF !important; 
-        font-size: 0.7em; 
+        font-size: 0.75em; 
         font-weight: 800; 
         text-transform: uppercase;
         letter-spacing: 1px;
+        display: flex;
+        align-items: center;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -99,25 +123,31 @@ tickers = {
 # 2. CALCULS AVANCÉS
 # =========================================================
 def calculate_advanced_stats(data, btc_data):
+    # RSI
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     data['RSI'] = 100 - (100 / (1 + gain/loss))
     
+    # Moyennes Mobiles
     data['SMA50'] = data['Close'].rolling(50).mean()
     data['SMA200'] = data['Close'].rolling(200).mean()
     
+    # 1. Corrélation BTC
     common_idx = data.index.intersection(btc_data.index)
     corr = data.loc[common_idx]['Close'].pct_change().corr(btc_data.loc[common_idx]['Close'].pct_change())
     
+    # 2. Win Rate
     green_days = len(data[data['Close'] > data['Open']])
     total_days = len(data)
     win_rate = (green_days / total_days) * 100 if total_days > 0 else 0
     
+    # 3. Volume Trend
     vol_short = data['Volume'].tail(5).mean()
     vol_long = data['Volume'].tail(20).mean()
     vol_trend = ((vol_short - vol_long) / vol_long) * 100 if vol_long > 0 else 0
     
+    # 4. Ratio Sharpe
     returns = data['Close'].pct_change().dropna()
     sharpe = (returns.mean() / returns.std()) * np.sqrt(365) if returns.std() != 0 else 0
     
@@ -134,11 +164,15 @@ def get_data(symbol, period="1y"):
     try:
         data = yf.Ticker(symbol).history(period=period)
         if data.empty: return None, None
+        
         btc = yf.Ticker("BTC-EUR").history(period=period)
+        
         data, stats = calculate_advanced_stats(data, btc)
+        
         info = yf.Ticker(symbol).fast_info
         stats['last'] = info.last_price
         stats['prev'] = info.previous_close
+        
         return data, stats
     except: return None, None
 
@@ -161,6 +195,7 @@ st.sidebar.title("🏦 Hedge Fund Dash")
 page = st.sidebar.radio("Navigation", ["Vue Globale 🌍", "Deep Dive 🔍"])
 if st.sidebar.button("🔄 Refresh"): st.cache_data.clear(); st.rerun()
 
+# Couleurs
 c_up = "#00f2c3"
 c_down = "#ff0055"
 
@@ -203,46 +238,60 @@ elif page == "Deep Dive 🔍":
         
     if hist is None: st.error("Erreur de données").stop()
 
-    # --- TOP KPI CUSTOM ---
+    # --- TOP KPI (AVEC TOOLTIPS) ---
     var = ((stats['last'] - stats['prev'])/stats['prev'])*100
+    
     k1, k2, k3, k4 = st.columns(4)
     
-    def kpi_card(title, value, detail, detail_color_class):
+    def kpi_card(title, value, detail, detail_color_class, help_text):
         return f"""
         <div class="kpi-card">
-            <span class="kpi-title">{title}</span>
+            <div style="display: flex; justify-content: center; align-items: center;">
+                <span class="kpi-title">{title}</span>
+                <span class="tooltip-icon" title="{help_text}">?</span>
+            </div>
             <div class="kpi-value">{value}</div>
             <div class="kpi-detail {detail_color_class}">{detail}</div>
         </div>
         """
     
+    # 1. PRIX
     var_class = "kpi-delta-pos" if var > 0 else "kpi-delta-neg"
-    k1.markdown(kpi_card("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:+.2f}%", var_class), unsafe_allow_html=True)
+    k1.markdown(kpi_card("PRIX ACTUEL", f"{stats['last']:.4f} €", f"{var:+.2f}%", var_class, 
+                         "Le dernier prix de transaction et sa variation sur 24h."), unsafe_allow_html=True)
     
+    # 2. SHARPE
     sharpe = stats['sharpe']
     s_cls = "kpi-delta-pos" if sharpe > 1 else ("kpi-delta-neutral" if sharpe > 0 else "kpi-delta-neg")
     s_txt = "Excellent" if sharpe > 2 else ("Bon" if sharpe > 1 else "Risqué")
-    k2.markdown(kpi_card("RATIO SHARPE", f"{sharpe:.2f}", s_txt, s_cls), unsafe_allow_html=True)
+    k2.markdown(kpi_card("RATIO SHARPE", f"{sharpe:.2f}", s_txt, s_cls, 
+                         "Mesure la rentabilité par rapport au risque pris. > 1 est bon. < 0 signifie que l'actif perd de l'argent ou est trop volatil pour son gain."), unsafe_allow_html=True)
     
+    # 3. CORRELATION
     corr = stats['corr_btc']
     c_cls = "kpi-delta-pos" if corr > 0.7 else "kpi-delta-neutral"
     c_txt = "Suit le BTC" if corr > 0.7 else "Indépendant"
-    k3.markdown(kpi_card("CORRÉLATION BTC", f"{corr:.2f}", c_txt, c_cls), unsafe_allow_html=True)
+    k3.markdown(kpi_card("CORRÉLATION BTC", f"{corr:.2f}", c_txt, c_cls, 
+                         "Mesure à quel point l'actif imite le Bitcoin. 1 = Copie parfaite, 0 = Totalement indépendant. Utile pour diversifier."), unsafe_allow_html=True)
     
+    # 4. RSI
     rsi = hist['RSI'].iloc[-1]
     r_cls = "kpi-delta-neg" if rsi > 70 else ("kpi-delta-pos" if rsi < 30 else "kpi-delta-neutral")
     r_txt = "Surchauffe" if rsi > 70 else ("Opportunité" if rsi < 30 else "Neutre")
-    k4.markdown(kpi_card("RSI (MOMENTUM)", f"{rsi:.1f}", r_txt, r_cls), unsafe_allow_html=True)
+    k4.markdown(kpi_card("RSI (MOMENTUM)", f"{rsi:.1f}", r_txt, r_cls, 
+                         "Indicateur de force (0-100). >70 = Surchauffe (risque de correction). <30 = Survente (prix potentiellement bas)."), unsafe_allow_html=True)
     
     st.divider()
 
+    # --- SCORECARD (AVEC TOOLTIPS) ---
     col_score, col_chart = st.columns([1, 3])
     
     with col_score:
         st.subheader("📊 Scorecard")
+        
         st.markdown(f"""
         <div class="scorecard">
-            <span class="score-title">VOLATILITÉ JOUR</span><br>
+            <span class="score-title">VOLATILITÉ JOUR <span class="tooltip-icon" title="Écart moyen des variations quotidiennes. Plus c'est haut, plus ça bouge fort chaque jour.">?</span></span>
             <span style="font-size:1.3em; font-weight:bold;">{stats['volatility_day']:.2f}%</span>
         </div>
         """, unsafe_allow_html=True)
@@ -250,7 +299,7 @@ elif page == "Deep Dive 🔍":
         wr_color = c_up if stats['win_rate'] > 50 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span class="score-title">WIN RATE</span><br>
+            <span class="score-title">WIN RATE <span class="tooltip-icon" title="Pourcentage de jours où le prix a fini en hausse sur la période affichée.">?</span></span>
             <span style="font-size:1.3em; font-weight:bold; color:{wr_color}">{stats['win_rate']:.1f}%</span>
             <div style="font-size:0.7rem; color:#888;">Jours Verts</div>
         </div>
@@ -260,7 +309,7 @@ elif page == "Deep Dive 🔍":
         vol_col = c_up if stats['vol_trend'] > 0 else c_down
         st.markdown(f"""
         <div class="scorecard">
-            <span class="score-title">TENDANCE VOLUME</span><br>
+            <span class="score-title">TENDANCE VOLUME <span class="tooltip-icon" title="Comparaison du volume récent (5j) vs moyen terme (20j). Indique si l'intérêt pour l'actif grandit.">?</span></span>
             <span style="font-size:1.3em; font-weight:bold; color:{vol_col}">{stats['vol_trend']:+.1f}%</span><br>
             <span style="font-size:0.7em; color:#ccc;">{vol_txt}</span>
         </div>
@@ -268,7 +317,7 @@ elif page == "Deep Dive 🔍":
         
         st.markdown(f"""
         <div class="scorecard">
-            <span class="score-title">RANGE PÉRIODE</span><br>
+            <span class="score-title">RANGE PÉRIODE <span class="tooltip-icon" title="Le prix le plus bas et le prix le plus haut atteints sur la période sélectionnée.">?</span></span>
             <span style="font-size:0.8em; color:#888;">High:</span> <span style="color:{c_up}">{hist['High'].max():.2f}€</span><br>
             <span style="font-size:0.8em; color:#888;">Low:</span> <span style="color:{c_down}">{hist['Low'].min():.2f}€</span>
         </div>
